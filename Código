@@ -1,0 +1,226 @@
+# Cargar las librerías necesarias
+library(readxl)
+library(zoo)
+library(dplyr)
+library(ggplot2)
+library(vars)
+library(tseries)
+library(forecast)
+library(urca)
+# Cargar los datos
+datos <- read_excel("bass.xlsx")
+# Convertir las fechas y agregar columnas necesarias
+datos$Mes <- as.yearmon(datos$Fecha)
+# Agregar las variables agregadas mensualmente
+BM <- aggregate(BM ~ Mes, data = datos, FUN = sum)
+INF <- aggregate(INF ~ Mes, data = datos, FUN = sum)
+# Unir los datos agregados en un solo dataframe
+datos_m <- left_join(BM, INF, by = 'Mes')
+head(datos_m)
+# Gráficas de las series temporales
+ggplot(data = datos_m) +
+ geom_point(aes(x = BM, y = INF)) +
+ labs(x = "Base monetaria",
+ y = "Inflación",
+ color = "") +
+ theme_bw()
+colors <- c("Base monetaria" = "darkblue",
+ "Inflación" = "darkred")
+# Otra gráfica (Toca hacerla manual no sé por qué)
+ggplot(data = datos_m) +
+ geom_line(aes(x = Mes, y = BM, group = 1, color = 'Base monetaria')) +
+ geom_line(aes(x = Mes, y = INF, group = 1, color = 'Inflación')) +
+ labs(x = "Fecha",
+ y = "Base monetaria - Inflación",
+ color = "") +
+ scale_color_manual(values = colors) +
+ theme_bw()
+# Convertir datos a series temporales y crear un objeto VAR
+var_energia <- ts(datos_m[,2:3], frequency = 12)
+plot.ts(var_energia)
+# Pruebas de estacionariedad
+pp.test(var_energia[,1])
+pp.test(var_energia[,2])
+adf.test(var_energia[,1])
+adf.test(var_energia[,2])
+# Selección del número óptimo de rezagos para el modelo VAR
+VARselect(var_energia, lag.max = 8, type = "const")
+VARselect(var_energia, lag.max = 20, type = "const")
+# Estimación del modelo VAR
+modelo_var <- VAR(var_energia, p = 12)
+summary(modelo_var)
+acf(residuals(modelo_var)[,1])
+acf(residuals(modelo_var)[,2])
+# Pruebas al modelo
+roots(modelo_var)
+serial.test(modelo_var, lags.bg = 16)
+normality.test(modelo_var, multivariate.only = FALSE)
+# Diferenciación de las series temporales
+var_energia_dif <- diff(var_energia)
+plot.ts(var_energia_dif)
+pp.test(var_energia_dif[,1])
+pp.test(var_energia_dif[,2])
+adf.test(var_energia_dif[,1])
+adf.test(var_energia_dif[,2])
+# Selección del número óptimo de rezagos para las series diferenciadas
+VARselect(var_energia_dif, lag.max = 20, type = "const")
+modelo_var_dif <- VAR(var_energia_dif, p = 12)
+summary(modelo_var_dif)
+roots(modelo_var_dif)
+serial.test(modelo_var_dif, lags.bg = 16)
+normality.test(modelo_var_dif, multivariate.only = FALSE)
+# Pruebas de causalidad de Granger
+grangertest(diff(BM) ~ diff(INF), order = 12, data = datos_m)
+grangertest(diff(INF) ~ diff(BM), order = 12, data = datos_m)
+# Análisis de Impulso-Respuesta
+modelo.irf <- irf(modelo_var, impulse = "BM", response = "INF", n.ahead = 20)
+modelo.irf2 <- irf(modelo_var, impulse = "INF", response = "BM", n.ahead = 20)
+plot(modelo.irf)
+plot(modelo.irf2)
+###
+# Suponiendo que datos es tu dataframe y BM es la columna de Base Monetaria
+datos <- read_excel("bass.xlsx") # Asegúrate de cargar correctamente tus datos
+# Calcular la variación porcentual de la Base Monetaria
+variacion_absoluta <- c(NA, diff(datos$BM))
+lagged_BM <- lag(datos$BM, default = datos$BM[1]) # Usamos el primer valor como default
+# Calcular la variación porcentual
+variacion_porcentual <- (variacion_absoluta / lagged_BM) * 100
+# Agregar la variación porcentual al dataframe
+datos$Variacion_Porcentual_BM <- c(NA, variacion_porcentual[-1]) # Usamos [-1] para omitir el primer NA
+# Verificar los primeros registros para asegurarnos que se ha agregado correctamente
+View(datos)
+# Gráficas de las series temporales
+ggplot(data = datos) +
+ geom_point(aes(x = Variacion_Porcentual_BM, y = INF)) +
+ labs(x = "Variación base monetaria",
+ y = "Inflación",
+ color = "") +
+ theme_bw()
+colors <- c("Variación base monetaria" = "darkblue",
+ "Inflación" = "darkred")
+# Otra gráfica (Toca hacerla manual no sé por qué)
+ggplot(data = datos) +
+ geom_line(aes(x = Fecha, y = Variacion_Porcentual_BM, group = 1, color = 'Base monetaria')) +
+ geom_line(aes(x = Fecha, y = INF, group = 1, color = 'Inflación')) +
+ labs(x = "Fecha",
+ y = "Base monetaria - Inflación",
+ color = "") +
+ scale_color_manual(values = colors) +
+ theme_bw()
+## Línea de regresión
+# Gráficas de las series temporales
+ggplot(data = datos) +
+ geom_point(aes(x = Variacion_Porcentual_BM, y = INF)) +
+ geom_smooth(aes(x = Variacion_Porcentual_BM, y = INF), method = "lm", color = "blue") +
+ labs(x = "Variación base monetaria",
+ y = "Inflación",
+ color = "") +
+ theme_bw()
+colors <- c("Variación base monetaria" = "darkblue",
+ "Inflación" = "darkred")
+summary(datos[, sapply(datos, is.numeric)])
+# Crear el gráfico de Inflación
+grafico_inflacion <- ggplot(data = datos, aes(x = Fecha, y = INF)) +
+ geom_point(aes(color = INF)) +
+ geom_smooth(method = "loess") +
+ labs(x = "Fecha", y = "Inflacion", title = "Evolución Inflacion") +
+ theme_minimal()
+grafico_inflacion
+# Crear el gráfico de Base monetaria
+grafico_base_monetaria <- ggplot(data = datos, aes(x = Fecha, y = BM)) +
+ geom_point(aes(color = BM)) +
+ geom_smooth(method = "loess") +
+ labs(x = "Fecha", y = "Base monetaria", title = "Evolución Base monetaria") +
+ theme_minimal()
+grafico_base_monetaria
+# Crear el gráfico de variación Base monetaria
+grafico_variacion <- ggplot(data = datos, aes(x = Fecha, y = Variacion_Porcentual_BM)) +
+ geom_point(aes(color = Variacion_Porcentual_BM)) +
+ geom_smooth(method = "loess") +
+ labs(x = "Fecha", y = "Variación base monetaria", title = "Variación Base monetaria") +
+ theme_minimal()
+grafico_variacion
+############################# ANÁLISIS CON LA VARIABLE DE VARIACIÓN DE BASE MONETARIA
+# Suponiendo que datos es tu dataframe y BM es la columna de Base Monetaria
+datos <- read_excel("bass.xlsx") # Asegúrate de cargar correctamente tus datos
+# Calcular la variación porcentual de la Base Monetaria
+variacion_absoluta <- c(NA, diff(datos$BM))
+lagged_BM <- lag(datos$BM, default = datos$BM[1]) # Usamos el primer valor como default
+# Calcular la variación porcentual
+variacion_porcentual <- (variacion_absoluta / lagged_BM) * 100
+# Agregar la variación porcentual al dataframe
+datos$Variacion_Porcentual_BM <- c(NA, variacion_porcentual[-1]) # Usamos [-1] para omitir el primer NA
+# Verificar los primeros registros para asegurarnos que se ha agregado correctamente
+View(datos)
+# Convertir las fechas y agregar columnas necesarias
+datos$Mes <- as.yearmon(datos$Fecha)
+# Agregar las variables agregadas mensualmente
+BM <- aggregate(BM ~ Mes, data = datos, FUN = sum)
+INF <- aggregate(INF ~ Mes, data = datos, FUN = sum)
+Variacion_Porcentual_BM <- aggregate(Variacion_Porcentual_BM ~ Mes, data = datos, FUN = sum)
+# Unir los datos agregados en un solo dataframe
+datos_m <- left_join(BM, INF, Variacion_Porcentual_BM, by = 'Mes')
+head(datos_m)
+View(datos_m)
+# Gráficas de las series temporales
+ggplot(data = datos) +
+ geom_point(aes(x = Variacion_Porcentual_BM, y = INF)) +
+ labs(x = "Var Base monetaria",
+ y = "Inflación",
+ color = "") +
+ theme_bw()
+colors <- c("Variación base monetaria" = "darkblue",
+ "Inflación" = "darkred")
+# Otra gráfica (Toca hacerla manual no sé por qué)
+ggplot(data = datos) +
+ geom_line(aes(x = Mes, y = Variacion_Porcentual_BM, group = 1, color = 'Variación base monetaria')) +
+ geom_line(aes(x = Mes, y = INF, group = 1, color = 'Inflación')) +
+ labs(x = "Fecha",
+ y = "Variación base monetaria - Inflación",
+ color = "") +
+ scale_color_manual(values = colors) +
+ theme_bw()
+# Convertir datos a series temporales y crear un objeto VAR
+VAR <- ts(datos[,2:3], frequency = 12)
+plot.ts(VAR)
+# Pruebas de estacionariedad
+pp.test(VAR[,1])
+pp.test(VAR[,2])
+adf.test(VAR[,1])
+adf.test(VAR[,2])
+# Selección del número óptimo de rezagos para el modelo VAR
+VARselect(VAR, lag.max = 8, type = "const")
+VARselect(VAR, lag.max = 20, type = "const")
+# Estimación del modelo VAR
+model_var <- VAR(VAR, p = 12)
+summary(model_var)
+acf(residuals(model_var)[,1])
+acf(residuals(model_var)[,2])
+# Pruebas al modelo
+roots(model_var)
+serial.test(model_var, lags.bg = 16)
+normality.test(model_var, multivariate.only = FALSE)
+# Diferenciación de las series temporales
+VAR_dif <- diff(VAR)
+plot.ts(VAR_dif)
+pp.test(VAR_dif[,1])
+pp.test(VAR_dif[,2])
+adf.test(VAR_dif[,1])
+adf.test(VAR_dif[,2])
+# Selección del número óptimo de rezagos para las series diferenciadas
+VARselect(VAR_dif, lag.max = 20, type = "const")
+model_var_dif <- VAR(VAR_dif, p = 16)
+summary(model_var_dif)
+roots(model_var_dif)
+serial.test(model_var_dif, lags.bg = 16)
+normality.test(model_var_dif, multivariate.only = FALSE)
+# Pruebas de causalidad de Granger
+grangertest(diff(Variacion_Porcentual_BM) ~ diff(INF), order = 16, data = datos)
+grangertest(diff(INF) ~ diff(Variacion_Porcentual_BM), order = 16, data = datos)
+# Análisis de Impulso-Respuesta
+modelo.irf <- irf(model_var, impulse = "Variación Base Monetaria", response = "Inflación", n.ahead = 16)
+modelo.irf2 <- irf(model_var, impulse = "Inflación", response = "Variación Base Monetaria", n.ahead = 16)
+plot(modelo.irf)
+plot(modelo.irf2)
+# Verifica los nombres de las variables en el modelo VAR
+colnames(model_var$y)
